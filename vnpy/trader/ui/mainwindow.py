@@ -116,6 +116,16 @@ class MainWindow(QtWidgets.QMainWindow):
                 func
             )
 
+        # 断开菜单 (测试点3: 连接异常监测)
+        for name in gateway_names:
+            func: Callable = partial(self.disconnect_gateway, name)
+            self.add_action(
+                sys_menu,
+                _("断开{}").format(name),
+                get_icon_path(__file__, "exit.ico"),
+                func
+            )
+
         sys_menu.addSeparator()
 
         self.add_action(
@@ -245,6 +255,15 @@ class MainWindow(QtWidgets.QMainWindow):
         dock.setFeatures(dock.DockWidgetFeature.DockWidgetFloatable | dock.DockWidgetFeature.DockWidgetMovable)
         self.addDockWidget(area, dock)
         return widget, dock
+
+    def disconnect_gateway(self, gateway_name: str) -> None:
+        """
+        Disconnect gateway.
+        """
+        gateway = self.main_engine.get_gateway(gateway_name)
+        if gateway:
+            gateway.close()
+            self.main_engine.write_log(f"接口{gateway_name}已手动断开")
 
     def connect_gateway(self, gateway_name: str) -> None:
         """

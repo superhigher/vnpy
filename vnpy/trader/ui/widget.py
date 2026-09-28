@@ -452,11 +452,80 @@ class LogMonitor(BaseMonitor):
     data_key: str = ""
     sorting: bool = False
 
+    # 行数上限 (防止行数过多卡顿,超过则删最旧行)
+    max_row_count: int = 5000
+
     headers: dict = {
         "time": {"display": _("时间"), "cell": TimeCell, "update": False},
         "msg": {"display": _("信息"), "cell": MsgCell, "update": False},
         "gateway_name": {"display": _("接口"), "cell": BaseCell, "update": False},
     }
+
+    def init_ui(self) -> None:
+        """初始化界面,并加载近2天历史日志"""
+        super().init_ui()
+        self.load_history_logs()
+
+    def load_history_logs(self) -> None:
+        """加载近7天的日志文件,显示到界面"""
+        import os
+        from datetime import datetime, timedelta
+        from vnpy.trader.object import LogData
+
+        log_dir: str = os.path.join(os.path.expanduser("~"), ".vntrader", "log")
+        if not os.path.exists(log_dir):
+            return
+
+        today = datetime.now()
+        # 加载最近7天的日志 (覆盖测试期间的日志)
+        dates_to_load = [
+            (today - timedelta(days=i)).strftime("%Y%m%d")
+            for i in range(6, -1, -1)   # 6天前到今天,旧->新
+        ]
+
+        history_logs: list = []
+        for date_str in dates_to_load:
+            log_file = os.path.join(log_dir, f"vt_{date_str}.log")
+            if not os.path.exists(log_file):
+                continue
+            try:
+                with open(log_file, encoding="utf-8") as f:
+                    for line in f:
+                        # 解析: "2026-08-13 09:42:39.842 | INFO | MainEngine | 信息"
+                        parts = line.split(" | ", 3)
+                        if len(parts) < 4:
+                            continue
+                        time_str = parts[0]
+                        gateway = parts[2]
+                        msg = parts[3].rstrip("\n")
+                        try:
+                            log_time = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S.%f")
+                        except ValueError:
+                            try:
+                                log_time = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
+                            except ValueError:
+                                continue
+
+                        log = LogData(msg=msg, gateway_name=gateway)
+                        log.time = log_time
+                        history_logs.append(log)
+            except Exception:
+                continue
+
+        # 按时间正序插入 (旧->新, insertRow(0)会让最新的在顶部)
+        for log in history_logs:
+            self.insert_new_row(log)
+
+        # 超过上限删最旧行
+        while self.rowCount() > self.max_row_count:
+            self.removeRow(self.rowCount() - 1)
+
+    def insert_new_row(self, data: Any) -> None:
+        """插入新行,并维护行数上限"""
+        super().insert_new_row(data)
+        # 超过上限删最旧行 (最后一行)
+        while self.rowCount() > self.max_row_count:
+            self.removeRow(self.rowCount() - 1)
 
 
 class TradeMonitor(BaseMonitor):
